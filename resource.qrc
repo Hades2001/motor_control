@@ -1,0 +1,17 @@
+<RCC>
+    <qresource prefix="/svg">
+        <file>icons/motor_bottom.svg</file>
+        <file>icons/motor_top.svg</file>
+        <file>icons/motor_mid.svg</file>
+    </qresource>
+    <qresource prefix="/icons">
+        <file>icons/connection.png</file>
+        <file>icons/close.png</file>
+        <file>icons/bk_img.png</file>
+        <file>icons/logIcon.png</file>
+        <file>icons/splineIcon.png</file>
+        <file>icons/serial.png</file>
+        <file>icons/usb_45.png</file>
+        <file>icons/setting.png</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,96 @@
+#ifndef DYNAMICCHARTS_H
+#define DYNAMICCHARTS_H
+
+#include <QObject>
+#include <QtCharts/QtCharts>
+
+template<class T> class dynamicData
+{
+public:
+    dynamicData(quint32 maxSize,QColor color,bool hasAxisX = true,bool hasAxisY = true):
+        _maxSize(maxSize),
+        _hasAxisX(hasAxisX),
+        _hasAxisY(hasAxisY)
+    {
+        _axisX = new QValueAxis;
+        _axisY = new QValueAxis;
+        _line = new QLineSeries;
+
+        this->setColor(color);
+        _line->setUseOpenGL(true);
+
+        //_line->attachAxis(_axisX);
+        //_line->attachAxis(_axisY);
+
+        //_line->setPen(QPen(QColor(0, 203, 255),1,Qt::SolidLine));
+    }
+
+    void append(T data)
+    {
+        if(_dataList.size() >= _maxSize ) _dataList.removeFirst();
+        _dataList.append(data);
+        if( _cnt < 10 )
+        {
+            _cnt ++;
+            return ;
+        }
+        _line->clear();
+        for( int i = 0; i < _dataList.size(); i++ )
+        {
+             _line->append(_axisX->min() + i,qreal(_dataList.at(i)));
+        }
+    }
+    void setColor(QColor color){_line->setColor(color);}
+    void setBrush(QBrush brush){_line->setBrush(brush);}
+
+    void setAxisX(quint32 min,quint32 max){_axisX->setRange(min,max); _maxSize = quint32(max - min);}
+    void setAxisY(T min,T max){_axisY->setRange(min,max);}
+    QLineSeries* lineSeries(void){ return _line; }
+    QValueAxis * axisX(void){ return _axisX; }
+    QValueAxis * axisY(void){ return _axisY; }
+
+    bool _hasAxisX;
+    bool _hasAxisY;
+private:
+    QList<T> _dataList;
+
+    QValueAxis *_axisX = nullptr;
+    QValueAxis *_axisY = nullptr;
+    QLineSeries *_line = nullptr;
+    quint32 _maxSize = 0;
+
+    quint16 _cnt = 0;
+};
+
+
+class dynamiccharts
+{
+public:
+    dynamiccharts();
+    QValueAxis * axisX(void){ return _axisX; }
+    QValueAxis * axisY(void){ return _axisY; }
+
+    template<class T> void addDynamicData(dynamicData<T>* dynamicData){
+        _chart->addSeries(dynamicData->lineSeries());
+
+        //double(fvalue[1])
+        _chart->setAnimationOptions(QChart::NoAnimation);
+
+        if( dynamicData->_hasAxisX )
+        {
+            _chart->setAxisX(dynamicData->axisX(),dynamicData->lineSeries());
+        }
+        if( dynamicData->_hasAxisY )
+        {
+            _chart->setAxisY(dynamicData->axisY(),dynamicData->lineSeries());
+        }
+
+    }
+    QChart* chart(){return _chart;}
+private:
+    QChart* _chart = nullptr;
+    QValueAxis *_axisX = nullptr;
+    QValueAxis *_axisY = nullptr;
+};
+
+#endif // DYNAMICCHARTS_H
