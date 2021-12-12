@@ -13,5 +13,6 @@
         <file>icons/serial.png</file>
         <file>icons/usb_45.png</file>
         <file>icons/setting.png</file>
+        <file>icons/run.png</file>
     </qresource>
 </RCC>
