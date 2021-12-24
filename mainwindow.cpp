@@ -1,27 +1,14 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
-#define R2D(_R) (_R * 57.295779f)
-
-
-
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
 
-    _serial = new serialconnect();
-    ui->tw_connect->clear();
-    ui->tw_connect->addTab(_serial,"SERIAL");
-    ui->tw_connect->addTab(new QWidget(),"USB HID");
-    ui->tw_connect->addTab(new QWidget(),"RS485");
-
-    this->setWindowFlags(Qt::FramelessWindowHint);//去掉标题栏
-
-    //this->setWindowOpacity(0.7);//设置透明1-全体透明
+    this->setWindowFlags(Qt::FramelessWindowHint);
     this->setAttribute(Qt::WA_TranslucentBackground, true);
-
 
     customPlot = ui->graphicsView_charts;
 
@@ -44,39 +31,52 @@ MainWindow::MainWindow(QWidget *parent) :
     flush = new QTimer();
     connect(flush,&QTimer::timeout,this,[=](){
         customPlot->replot();
-        ui->dial->setValue(int(_dialAngle));
+        if( !this->_dial_pressed_flag )
+        {
+            ui->dial->setFromSensor(_dialAngle);
+        }
     });
 
-    flush->start(17);
+    //ui->dial->blockSignals(false);
+
+    flush->start(5);
     customPlot->addGraph();
     ui->te_log->document()->setMaximumBlockCount(2000);
 
-
-    //ui->bn_connect->setProperty("mode", "serial");
     //ui->textEdit->append("<font color=\"#FF0000\">红色字体</font>");
 
-     connect(ui->wdt_connect,&connectWidget::sig_packready,this,[=](dataPack::transmission_pack_t pack){
+     connect(ui->wdt_connect,&connectWidget::sig_packready,this,[=](dataPack pack){
          if(( pack.cmd >= 0x30 )&&( pack.cmd < 0x40 ))
          {
              ui->te_log->append(QString("<font color=\"#%1\">%2</font>").
-                                arg(0xdedede,6,16,QLatin1Char('0')).
+                                arg(0x101010,6,16,QLatin1Char('0')).
                                 arg(QString(pack.data)));
          }
          else if( pack.cmd == 0x11 )
          {
-             //qDebug()<<"parm Length = "<<QString::number(pack.length);
-
              quint32* u32value = reinterpret_cast<quint32*>(pack.data.data());
              float* fvalue = reinterpret_cast<float*>(u32value);
 
-             qreal angle = double(R2D(fvalue[0]));
-             angle = fmod(angle,360.0);
-             _dialAngle = ( angle < 0 ) ? ( 360.0 - fabs(angle)) : angle;
-             ui->le_angle->setText(QString().sprintf("%.4f",double(R2D(fvalue[0]))));
-             ui->le_velocity->setText(QString().sprintf("%.4f",double(fvalue[1])));
+             _dialAngle = double(R2D(double(fvalue[0])));
+             if( !_AngleFocusInFlag )
+             {
+                 ui->le_angle->setText(QString().sprintf("%.4f",double(R2D(double(fvalue[0])))));
+             }
+             ui->le_velocity->setText(QString().sprintf("%.4f",double(double(fvalue[1]))));
              _velocityCharts->append(double(fvalue[1]));
          }
      });
+
+     connect(ui->dial,&motordial::sig_angle_change,this,[=](int circle,double angle){
+         dataPack pack(dataPack::CMD_SET_ANGLE);
+         pack.append(qint32(circle));
+         pack.append(float(D2R(fmod(angle,360.0))));
+
+         qDebug()<<QString::number(circle)<<QString::number(angle);
+         ui->wdt_connect->send_pack(pack);
+     });
+
+     ui->le_angle->installEventFilter(this);
 
      pWinAnimation = new QPropertyAnimation(this, "size");
 
@@ -85,6 +85,7 @@ MainWindow::MainWindow(QWidget *parent) :
      pWinAnimation->setStartValue(QSize(16,430));
      pWinAnimation->setEndValue(QSize(1000,430));
      pWinAnimation->start();
+
 }
 
 MainWindow::~MainWindow()
@@ -95,13 +96,11 @@ MainWindow::~MainWindow()
 void MainWindow::mousePressEvent(QMouseEvent *event)
 {
     Q_UNUSED(event)
-    //ui->scoreStandardBtn->geometry().contains(this->mapFromGlobal(QCursor::pos()))
     if(!ui->lab_background->geometry().contains((this->mapFromGlobal(event->pos()))))
     {
         this->_bk_pressed_flag = true;
         _moveStartPos = event->globalPos() - this->pos();
     }
-
 }
 
 void MainWindow::mouseReleaseEvent(QMouseEvent *event)
@@ -117,6 +116,15 @@ void MainWindow::mouseMoveEvent(QMouseEvent *event)
     {
         this->move(event->globalPos() - _moveStartPos);
     }
+}
+
+bool MainWindow::eventFilter(QObject *watched,QEvent *event)
+{
+    if( watched == ui->le_angle )
+    {
+        _AngleFocusInFlag = ( event->type() == QEvent::FocusIn ) ? true : _AngleFocusInFlag;
+    }
+    return QWidget::eventFilter(watched,event);
 }
 
 void MainWindow::on_te_log_textChanged()
@@ -147,3 +155,39 @@ void MainWindow::on_bn_close_pressed()
     });
     pWinAnimation->start();
 }
+
+void MainWindow::on_bn_run_angle_clicked(bool checked)
+{
+    Q_UNUSED(checked);
+    dataPack pack(dataPack::CMD_SET_ANGLE);
+    double angle = ui->le_angle->text().toDouble();
+    pack.append(qint32(angle/360.0));
+    pack.append(float(D2R(fmod(angle,360.0))));
+
+    qDebug()<<QString::number(angle)<<QString::number(qint32(angle/360.0))<<QString::number(fmod(angle,360.0));
+    ui->wdt_connect->send_pack(pack);
+
+    _AngleFocusInFlag = false;
+}
+
+void MainWindow::on_bn_run_velocity_clicked(bool checked)
+{
+    Q_UNUSED(checked);
+    //ui->wdt_connect->send_pack();
+}
+
+void MainWindow::on_bn_run_idle_clicked(bool checked)
+{
+    Q_UNUSED(checked);
+    dataPack pack(dataPack::CMD_SET_IDLE);
+    pack.append(0.0f);
+    ui->wdt_connect->send_pack(pack);
+}
+
+
+void MainWindow::on_dial_sig_pressed(bool pressed)
+{
+    qDebug()<<"Dial pressed"<<pressed;
+    this->_dial_pressed_flag = pressed;
+}
+

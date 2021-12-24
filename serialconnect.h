@@ -6,16 +6,19 @@
 #include <QSerialPortInfo>
 #include <QMessageBox>
 #include <QListWidget>
-#include "nofocusframedelegate.h"
-#include "datapack.h"
+#include <QTimer>
 #include <QList>
 #include <QDebug>
+
+#include "nofocusframedelegate.h"
+#include "datapack.h"
+#include "transmission.h"
 
 namespace Ui {
 class serialconnect;
 }
 
-class serialconnect : public QWidget
+class serialconnect : public transmission
 {
     Q_OBJECT
 
@@ -37,30 +40,29 @@ public:
     ~serialconnect();
 
     void scanSerialName(void);
-    QVector<quint8> crctable_generate(quint8 poly, bool refin = false, bool refout = false);
-    quint8 reverse(quint8);
-    quint8 cala_crc(dataPack::transmission_pack_t &pack);
+
+    void deviceSendpack(dataPack pack);
+    bool isOpen();
+    int  close();
 
 private slots:
     void serial_ready_read();
-signals:
-    void packReady(dataPack::transmission_pack_t pack);
-    void isConnected(bool);
+    void slot_send_task();
 
 private slots:
     void on_bn_connect_pressed();
 
-
 private:
     Ui::serialconnect *ui;
     QSerialPort *_serialpotr;
+    QTimer *_tim_sendtask;
 
-    QList<dataPack::transmission_pack_t> _revicePackList;
+    QList<dataPack> _revicePackList;
+    QList<dataPack> _sendPackList;
     int _reviceState = kSerial_IDEL;
     int _reviceDataCnt = 0;
 
-    QVector<quint8> _crc_table;
-    dataPack::transmission_pack_t _currentRevicePack;
+    dataPack _currentRevicePack;
 };
 
 

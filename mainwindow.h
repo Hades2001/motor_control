@@ -32,12 +32,19 @@ protected:
     void mousePressEvent(QMouseEvent *event);
     void mouseReleaseEvent(QMouseEvent *event);
     void mouseMoveEvent(QMouseEvent *event);
+    bool eventFilter(QObject *,QEvent *);
 
 private slots:
     void on_te_log_textChanged();
     void on_bn_chart_stop_clicked(bool checked);
     void on_bn_clearlog_pressed();
     void on_bn_close_pressed();
+    void on_bn_run_angle_clicked(bool checked);
+    void on_bn_run_velocity_clicked(bool checked);
+
+    void on_dial_sig_pressed(bool pressed);
+
+    void on_bn_run_idle_clicked(bool checked);
 
 private:
     Ui::MainWindow *ui;
@@ -54,8 +61,11 @@ private:
     QTimer* flush;
 
     bool _bk_pressed_flag = false;
+    bool _dial_pressed_flag = false;
     QPoint _moveStartPos;
     connectWidget *_connectWodget;
+
+    bool _AngleFocusInFlag = false;
 
     QPropertyAnimation *pWinAnimation;
 

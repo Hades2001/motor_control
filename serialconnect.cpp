@@ -2,21 +2,22 @@
 #include "ui_serialconnect.h"
 
 serialconnect::serialconnect(QWidget *parent) :
-    QWidget(parent),
+    transmission(parent),
     ui(new Ui::serialconnect)
 {
     ui->setupUi(this);
 
-    _crc_table = crctable_generate(quint8(0x07));
+    _tim_sendtask = new QTimer();
+    connect(_tim_sendtask,&QTimer::timeout,this,&serialconnect::slot_send_task);
 
     _serialpotr = new QSerialPort();
-
-    connect(_serialpotr,&QSerialPort::errorOccurred,this,[](QSerialPort::SerialPortError error){
+    connect(_serialpotr,&QSerialPort::errorOccurred,this,[=](QSerialPort::SerialPortError error){
         Q_UNUSED(error)
+        qDebug()<<error;
+        //_serialpotr->close();
+        _tim_sendtask->stop();
     });
     connect(_serialpotr,&QSerialPort::readyRead,this,&serialconnect::serial_ready_read);
-
-    scanSerialName();
 
     QListWidget *listSetial = new QListWidget(this);
     listSetial->setItemDelegate(new NoFocusFrameDelegate(this));
@@ -25,47 +26,37 @@ serialconnect::serialconnect(QWidget *parent) :
     ui->cb_serial->setView(listSetial);
     connect(ui->cb_serial,&ClickedComboBox::clicked,this,&serialconnect::scanSerialName);
 
+    this->scanSerialName();
 }
 
 serialconnect::~serialconnect()
 {
+    delete _serialpotr;
     delete ui;
 }
 
-quint8 serialconnect::reverse(quint8 value)
+void serialconnect::deviceSendpack(dataPack pack)
 {
-  value = quint8(((value & 0xAA) >> 1) | ((value & 0x55) << 1));
-  value = quint8(((value & 0xCC) >> 2) | ((value & 0x33) << 2));
-  value = quint8((value >> 4) | (value << 4));
-
-  return value;
+    //qDebug()<<QString::number(pack.retry)<<QString::number(pack._retryCnt)<<QString::number(pack.retryTimeMs)<<QString::number(pack._retryTimeCnt);
+    _sendPackList.append(pack);
 }
 
-QVector<quint8> serialconnect::crctable_generate(quint8 poly, bool refin, bool refout)
+bool serialconnect::isOpen()
 {
-    QVector<quint8> array(256);
-    // X^8+X^5+X^4+1 0x31
-    // 1 0011 0001
-    // X^8+X^2+X^1+1 0x07
-    // 1 0000 0111
-    // X8+X4+X3+X2+1 0x1d
-    // 1 0001 1101
-    for( int i = 0; i < 256; i++ )
-    {
-        array[i] = ( refin ) ? reverse(quint8(i)) : quint8(i);
+    return _serialpotr->isOpen();
+}
 
-        for( int n = 7; n >= 0; n-- )
-        {
-            if(array[i] & 0x80){
-                array[i] = quint8(( array.at(i) << 1 ) ^ poly);
-            }
-            else{
-                array[i] = quint8(array.at(i) << 1 );
-            }
-        }
-        array[i] = ( refout ) ? reverse(array.at(i)) : array.at(i);
+int serialconnect::close()
+{
+    if( _serialpotr->isOpen())
+    {
+        _serialpotr->close();
+        _tim_sendtask->stop();
+        ui->bn_connect->setText("Connect");
+        emit sig_closed();
+        return 0;
     }
-    return array;
+    return -1;
 }
 
 void serialconnect::scanSerialName(void)
@@ -85,6 +76,26 @@ void serialconnect::scanSerialName(void)
     }
 }
 
+void serialconnect::slot_send_task()
+{
+    if( _sendPackList.isEmpty() ||( !_serialpotr->isOpen())) return;
+   dataPack* pack = &_sendPackList.first();
+
+   pack->_retryTimeCnt += 10;
+
+   if( pack->_retryTimeCnt >= pack->retryTimeMs )
+   {
+       _serialpotr->write(pack->toArray());
+       pack->_retryTimeCnt = 0;
+       pack->_retryCnt ++;
+   }
+   if(( pack->_retryCnt >= pack->retry )&&(!_sendPackList.isEmpty()))
+   {
+       qDebug()<<QString().sprintf("Send pack fault,pack id is %d",pack->id);
+       _sendPackList.removeFirst();
+   }
+}
+
 void serialconnect::serial_ready_read()
 {
     QByteArray array = _serialpotr->readAll();
@@ -102,7 +113,7 @@ void serialconnect::serial_ready_read()
             break;
         case kSerial_DIR:
             _currentRevicePack.crc = 0;
-            _currentRevicePack.dir = data;
+            _currentRevicePack.id = data;
             _reviceState = kSerial_CMD;
             break;
         case kSerial_CMD:
@@ -129,8 +140,18 @@ void serialconnect::serial_ready_read()
             _reviceState = kSerial_End;
             break;
         case kSerial_End:
-            if(( data == 0xee )&&(cala_crc(_currentRevicePack) == _currentRevicePack.crc)){
-                emit packReady(_currentRevicePack);
+            if(( data == 0xee )&&(_currentRevicePack.check_crc() == true)){
+                if(( !_sendPackList.isEmpty())&&(_currentRevicePack.id != 0xff))
+                {
+                    if(_sendPackList.first().id == _currentRevicePack.id )
+                    {
+                        _sendPackList.removeFirst();
+                    }
+                }
+                else if(_currentRevicePack.id == 0xff)
+                {
+                    emit sig_packready(_currentRevicePack);
+                }
                 _currentRevicePack.data.clear();
                 //_revicePackList.append(_currentRevicePack);
             }
@@ -148,8 +169,9 @@ void serialconnect::on_bn_connect_pressed()
     if( _serialpotr->isOpen())
     {
         _serialpotr->close();
+        _tim_sendtask->stop();
         ui->bn_connect->setText("Connect");
-        emit isConnected(false);
+        emit sig_closed();
     }
     else
     {
@@ -169,24 +191,7 @@ void serialconnect::on_bn_connect_pressed()
             return ;
         }
         ui->bn_connect->setText("Close");
-        emit isConnected(true);
+        _tim_sendtask->start(10);
+        emit sig_open();
     }
-}
-
-quint8 serialconnect::cala_crc(dataPack::transmission_pack_t &pack)
-{
-    quint8 crc = 0;
-    crc = _crc_table.at(crc ^ 0xaa);
-    crc = _crc_table.at(crc ^ 0x55);
-    crc = _crc_table.at(crc ^ pack.dir);
-    crc = _crc_table.at(crc ^ pack.cmd);
-    crc = _crc_table.at(crc ^ pack.length);
-
-    foreach(char data, pack.data)
-    {
-        crc = _crc_table.at(crc ^ quint8(data));
-    }
-    if(pack.crc != crc ) qDebug()<<QString().sprintf("CRC shoud be: %02x ",crc)<<QString().sprintf("but it's %02x",pack.crc);
-    //qDebug()<<QString().sprintf("CRC shoud be: %02x ",crc)<<QString().sprintf("is %02x",pack.crc);
-    return crc;
 }

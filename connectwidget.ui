@@ -156,7 +156,7 @@ QPushButton:checked{
      <height>155</height>
     </rect>
    </property>
-   <widget class="QWidget" name="stackedWidgetPage1" native="true"/>
+   <widget class="QWidget" name="stackedWidgetPage1"/>
   </widget>
   <widget class="QPushButton" name="bn_close">
    <property name="geometry">

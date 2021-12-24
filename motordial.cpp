@@ -29,15 +29,17 @@ motordial::motordial(QWidget *parent) :
     svgimg[kMotorImgMid]->render(&drawTopMid);
     svgimg[kMotorImgButtom]->render(&drawButtomImg);
 
+    this->setMinimum(0);
+    this->setMaximum(360);
 
-    QTimer *rrrr = new QTimer();
-    connect(rrrr,&QTimer::timeout,this,[=](){
-        int value = this->value() + 1;
-        value = ( value > 359 ) ? 0 : value;
-        this->setValue(value);
+    notifyAngleTimer = new QTimer();
+    connect(notifyAngleTimer,&QTimer::timeout,this,[=](){
+        if(isPressed)
+        {
+            emit sig_angle_change(this->_circle,this->_angle);
+        }
     });
-    //rrrr->start(5);
-
+    notifyAngleTimer->start(50);
 }
 
 motordial::~motordial()
@@ -45,7 +47,17 @@ motordial::~motordial()
 
 }
 
-QPixmap motordial::rotateImageWithPainter(const QPixmap &src, int angle)
+void motordial::setFromSensor(double angle)
+{
+    this->_circle = int(angle / 360.0);
+    angle = ( angle > 360.0 ) ? fmod(angle,360.0) : angle;
+    angle = ( angle < 0 ) ? ( 360.0 - fabs(angle)) : angle;
+    this->_angle = angle;
+    this->_angle_ole = angle;
+    this->update();
+}
+
+QPixmap motordial::rotateImageWithPainter(const QPixmap &src, double angle)
 {
     QPixmap pix(src.size());
     pix.fill(Qt::transparent);
@@ -101,17 +113,40 @@ void motordial::paintEvent(QPaintEvent *pe)
     QPainter p(this);
 
     p.drawPixmap(QRect(0,0,_img_size,_img_size),rotateImageWithPainter(*piximg[kMotorImgButtom],0),QRect(0,0,_img_size,_img_size));
-    p.drawPixmap(QRect(0,0,_img_size,_img_size),rotateImageWithPainter(*piximg[kMotorImgMid],this->value()),QRect(0,0,_img_size,_img_size));
+    p.drawPixmap(QRect(0,0,_img_size,_img_size),rotateImageWithPainter(*piximg[kMotorImgMid],this->_angle),QRect(0,0,_img_size,_img_size));
     p.drawPixmap(QRect(0,0,_img_size,_img_size),rotateImageWithPainter(*piximg[kMotorImgTop],0),QRect(0,0,_img_size,_img_size));
     p.end();
-
 }
 
 void motordial::sliderChange(QAbstractSlider::SliderChange change)
 {
     if( change == QAbstractSlider::SliderChange::SliderValueChange )
     {
-        //qDebug()<<"Value : "<<this->value();
+        this->_angle = double(this->value());
+        double angle_d = this->_angle - this->_angle_ole;
+        if(fabs( angle_d ) > 280 )  this->_circle += ( angle_d > 0 ) ? -1 : 1;
+        this->_angle_ole = _angle;
         this->update();
+    }
+}
+
+void motordial::mousePressEvent(QMouseEvent *event)
+{
+    Q_UNUSED(event)
+    if(event->button() == Qt::LeftButton)
+    {
+        emit sig_pressed(true);
+
+        isPressed = true;
+    }
+}
+void motordial::mouseReleaseEvent(QMouseEvent *event)
+{
+    Q_UNUSED(event)
+    if( isPressed )
+    {
+        emit sig_pressed(false);
+        emit sig_angle_change(this->_circle,this->_angle);
+        isPressed = false;
     }
 }

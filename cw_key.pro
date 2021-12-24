@@ -51,7 +51,8 @@ HEADERS += \
     dynamiccharts.h \
     qcustomplot.h \
     connectwidget.h \
-    datapack.h
+    datapack.h \
+    transmission.h
 
 FORMS += \
         mainwindow.ui \
